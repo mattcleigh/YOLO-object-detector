@@ -7,16 +7,18 @@ Built for the [LFX Mentorship 2023 03-Sep-Nov Challenge - #2702](https://github.
 
 
 ## Python Functions to be ported to Rust
-### Preprocessing Functions:
+### Preprocessing:
 
 `cv2.normalize` - To normalize images  
-    - Candidate 
+    - potentially exists [opencvmini](https://github.com/second-state/opencvmini/blob/main/src/lib.rs#L39C20-L39C20) 
 
 `cv2.resize` - To Resize images
+    - to be added to opencv mini ? 
+
+`cv2.dnn.readNet` -  loads networks
 
 
-### Post Processing functions:
-TODO
+### Post Processing:
 
 `draw_detections(image, boxes, scores, class_ids)`
 
@@ -24,4 +26,12 @@ TODO
 
 `extract_boxes(predictions)`
 
-`cv2.dnn.NMSBoxes``
+`cv2.dnn.NMSBoxes`
+
+`cv2.getTextSize`
+
+`cv2.putText`
+
+Maybe it makes sense to have a single function to take the output of the forward pass of a YOLO net output, 
+and return the bounding boxes and classnames. 
+It could be comprised of all the functions above 

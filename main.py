@@ -10,8 +10,10 @@ output_names = net.getUnconnectedOutLayersNames()
 # Get Net Width + Height
 input_shape = os.path.splitext(os.path.basename(model))[
     0].split('_')[-1].split('x')
+
 net_height = int(input_shape[0])
 net_width = int(input_shape[1])
+
 
 # Load Class names
 class_names = list(
