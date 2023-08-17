@@ -38,8 +38,8 @@ It could be comprised of all the functions above
 
 
 ### Helper Functions: 
-`cv2.imshow`
-`cv2.waitKey`
-`cv2.destroyAllWindows`
+`cv2.imshow`  
+`cv2.waitKey`  
+`cv2.destroyAllWindows`  
 We may want to decouple this to the actual Yolo crate, as these functions will require peripherals and some idea of a windowing system. 
 So depending on the design of the YOLO Crate, it may make sense to put these elsewhere.
