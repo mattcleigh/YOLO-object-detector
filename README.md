@@ -35,3 +35,11 @@ Built for the [LFX Mentorship 2023 03-Sep-Nov Challenge - #2702](https://github.
 Maybe it makes sense to have a single function to take the output of the forward pass of a YOLO net output, 
 and return the bounding boxes and classnames. 
 It could be comprised of all the functions above 
+
+
+### Helper Functions: 
+`cv2.imshow`
+`cv2.waitKey`
+`cv2.destroyAllWindows`
+We may want to decouple this to the actual Yolo crate, as these functions will require peripherals and some idea of a windowing system. 
+So depending on the design of the YOLO Crate, it may make sense to put these elsewhere.
