@@ -19,7 +19,8 @@ net_width = int(input_shape[1])
 class_names = list(
     map(lambda x: x.strip(), open('class.names', 'r').readlines()))
 
-conf_threshold = 0.7
+# Define confidence and intersection over union thresholds
+conf_threshold = 0.68
 iou_threshold = 0.5
 colors = np.random.default_rng(3).uniform(
     0, 255, size=(len(class_names), 3))
@@ -72,6 +73,7 @@ def rescale_boxes(boxes):
     input_shape = np.array(
         [net_width, net_height, net_width, net_height])
     boxes = np.divide(boxes, input_shape, dtype=np.float32)
+    # img_width, img_height are global values
     boxes *= np.array([img_width, img_height,
                        img_width, img_height])
     return boxes
@@ -95,13 +97,13 @@ def process_output(output):
 
     predictions = np.squeeze(output[0])
 
-    # Filter out object confidence scores below threshold
+    # Filter out object confidence scores below threshold [ All rows, 5th column ]
     obj_conf = predictions[:, 4]
 
     predictions = predictions[obj_conf > conf_threshold]
     obj_conf = obj_conf[obj_conf > conf_threshold]
 
-    # Multiply class confidence with bounding box confidence
+    # Multiply class confidence with bounding box confidence [All rows, 6th column until end]
     predictions[:, 5:] *= obj_conf[:, np.newaxis]
 
     # Get the scores
@@ -121,6 +123,7 @@ def process_output(output):
     # Apply non-maxima suppression to suppress weak, overlapping bounding boxes
     indices = cv2.dnn.NMSBoxes(
         boxes.tolist(), scores.tolist(), conf_threshold, iou_threshold)
+
     if len(indices) > 0:
         indices = indices.flatten()
 
@@ -128,15 +131,17 @@ def process_output(output):
 
 
 if __name__ == "__main__":
-
     # 1. Load image
+    print("Load image.jpg ...")
     image = cv2.imread("./image.jpg")
     img_height, img_width = image.shape[:2]  # [h,w,d]
 
     # 2. Prepare Image
+    print("prepare image...")
     normalized_image = prepare_image(image)
 
     # 3. Forward Pass through Net
+    print("Pass image through net ...")
     net_output = detect(normalized_image)
 
     # 4. Process Net outputs
@@ -146,7 +151,4 @@ if __name__ == "__main__":
     output_img = draw_detections(image, boxes, scores, class_ids)
 
     cv2.imwrite("./image_out.jpg", output_img)
-
-    # cv2.imshow("Output image", output_img)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+    print("image_out.jpg written, exit")
