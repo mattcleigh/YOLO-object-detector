@@ -58,10 +58,22 @@ def draw_boxes(
         label = f"{class_names[class_id]} {int(score * 100)}%"
 
         # Draw rectangle onto the image
-        cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness=2)
-        cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        lw = int(0.005 * min(image.shape[:2]))
+        cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness=lw)
+        # cv2.getTextSize(
+        #     label,
+        #     cv2.FONT_HERSHEY_SIMPLEX,
+        #     lw//5,
+        #     lw//2
+        # )
         cv2.putText(
-            image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, thickness=2
+            image,
+            label,
+            org=(x, y - 10),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=np.round(np.sqrt(lw)),
+            color=color,
+            thickness=lw // 2,
         )
     return image
 
@@ -107,7 +119,7 @@ def process_output(
     obj_conf = obj_conf[confidence_mask]
 
     # Multiply class confidence with bounding box confidence
-    # predictions[:, 5:] *= obj_conf[:, None] <- Is this necc?
+    predictions[:, 5:] *= obj_conf[:, None]  # Is this necc?
 
     # Get the maximum class score
     max_scores = np.max(predictions[:, 5:], axis=-1)
@@ -156,7 +168,8 @@ def main() -> None:
     class_colors = np.random.default_rng(3).uniform(0, 255, size=(len(class_names), 3))
 
     # Get a list of images to run over
-    for img_path in tqdm(Path(image_folder).glob("*"), "Drawing boxes on images"):
+    file_list = list(Path(image_folder).glob("*"))
+    for img_path in tqdm(file_list, "Drawing boxes on images"):
         image = cv2.imread(str(img_path))
 
         # Get the size ratio (width x height) to reposition the boxes
