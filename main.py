@@ -1,57 +1,43 @@
 import os
+from pathlib import Path
 import cv2
 import numpy as np
-
-# Initialize the NET
-model = "yolov7-tiny_480x640.onnx"
-net = cv2.dnn.readNet(model)
-output_names = net.getUnconnectedOutLayersNames()
-
-# Get Net Width + Height
-input_shape = os.path.splitext(os.path.basename(model))[
-    0].split('_')[-1].split('x')
-
-net_height = int(input_shape[0])
-net_width = int(input_shape[1])
+from tqdm import tqdm
 
 
-# Load Class names
-class_names = list(
-    map(lambda x: x.strip(), open('class.names', 'r').readlines()))
+def prepare_image(image: np.ndarray, shape: tuple) -> np.ndarray:
+    """Prepare the image for the network.
 
-# Define confidence and intersection over union thresholds
-conf_threshold = 0.68
-iou_threshold = 0.5
-colors = np.random.default_rng(3).uniform(
-    0, 255, size=(len(class_names), 3))
-
-
-def prepare_image(image):
-
+    Currently only supports the following
+    - Resize
+    - Normalise
+    """
     # Normalize for Object Detection
-    normalized_image = cv2.normalize(
-        image, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1
+    image = cv2.normalize(
+        src=image,
+        dst=None,
+        alpha=0,
+        beta=255,
+        norm_type=cv2.NORM_MINMAX,
+        dtype=cv2.CV_8UC1,
     )
 
     # Resize input image to match net size
-    input_img = cv2.resize(
-        normalized_image, (net_width, net_height)
-    )
+    image = cv2.resize(image, shape)
 
-    return input_img
+    return image
 
 
-def detect(processed_image):
+def forward_pass(
+    image: np.ndarray, network: cv2.dnn.Net, output_names: tuple
+) -> np.ndarray:
+    """Pass a pre-processed image through the network and extract the outputs.
 
-    blob = cv2.dnn.blobFromImage(processed_image, 1 / 255.0)
-
-    # Perform inference on the image
-    net.setInput(blob)
-
-    # Runs the forward pass to get output of the output layers
-    outputs = net.forward(output_names)
-
-    return outputs
+    Will also apply 1/255 scaling to the input image
+    """
+    blob = cv2.dnn.blobFromImage(image, 1 / 255.0)
+    network.setInput(blob)
+    return network.forward(output_names)[0]
 
 
 def draw_detections(image, boxes, scores, class_ids):
@@ -60,22 +46,21 @@ def draw_detections(image, boxes, scores, class_ids):
         color = colors[class_id]
 
         # Draw rectangle
-        cv2.rectangle(image, (x, y), (x+w, y+h), color, thickness=2)
+        cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness=2)
         label = class_names[class_id]
-        label = f'{label} {int(score * 100)}%'
+        label = f"{label} {int(score * 100)}%"
         cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.putText(image, label, (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, thickness=2)
+        cv2.putText(
+            image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, thickness=2
+        )
     return image
 
 
 def rescale_boxes(boxes):
-    input_shape = np.array(
-        [net_width, net_height, net_width, net_height])
+    input_shape = np.array([net_width, net_height, net_width, net_height])
     boxes = np.divide(boxes, input_shape, dtype=np.float32)
     # img_width, img_height are global values
-    boxes *= np.array([img_width, img_height,
-                       img_width, img_height])
+    boxes *= np.array([img_width, img_height, img_width, img_height])
     return boxes
 
 
@@ -93,36 +78,58 @@ def extract_boxes(predictions):
     return boxes_
 
 
-def process_output(output):
+def process_output(
+    outputs: np.ndarray,
+    conf_threshold: float = 0.68,
+    iou_threshold: float = 0.5,
+)->tuple:
+    """Process the output of the yolo model to get a collection of bounding boxes.
 
-    predictions = np.squeeze(output[0])
+    Full Yolo model output is typicaly:
+    - Grid X = Number of X grid cells (60)
+    - Grid Y = Number of Y grid cells (40)
+    - Num_Anchors = Number of anchor boxes per gird cell (7)
+    - 85 = Box features
+        - x location of center of object with cell coords
+        - y location of center of object with cell coords
+        - height of box ratio to cell height
+        - width of box ratio to cell width
+        - probability that anchor box contains an object center
+        - ...: class probabilities for 80 classes
 
-    # Filter out object confidence scores below threshold [ All rows, 5th column ]
-    obj_conf = predictions[:, 4]
+    First 3 dimensions are often merged
+    """
 
-    predictions = predictions[obj_conf > conf_threshold]
-    obj_conf = obj_conf[obj_conf > conf_threshold]
+    # Pop off the additional batch dimension
+    outputs = np.squeeze(outputs)
 
-    # Multiply class confidence with bounding box confidence [All rows, 6th column until end]
-    predictions[:, 5:] *= obj_conf[:, np.newaxis]
+    # Get the anchors the have a high confidence that they contain an object
+    obj_conf = outputs[:, 4]
+    confidence_mask =  obj_conf > conf_threshold
+    outputs = outputs[confidence_mask]
+    obj_conf = obj_conf[confidence_mask]
 
-    # Get the scores
-    scores = np.max(predictions[:, 5:], axis=1)
+    # Multiply class confidence with bounding box confidence
+    outputs[:, 5:] *= obj_conf[:, None]
 
-    # Filter out the objects with a low score
-    valid_scores = scores > conf_threshold
-    predictions = predictions[valid_scores]
-    scores = scores[valid_scores]
+    # Get the maximum class score
+    scores = np.max(outputs[:, 5:], axis=-1)
 
-    # Get the class with the highest confidence
-    class_ids = np.argmax(predictions[:, 5:], axis=1)
+    # Filter out the objects with a low score (ambiguous class)
+    valid_mask = scores > conf_threshold
+    outputs = outputs[valid_mask]
+    scores = scores[valid_mask]
+
+    # Get the class id with the highest confidence
+    class_ids = np.argmax(outputs[:, 5:], axis=-1)
 
     # Get bounding boxes for each object
     boxes = extract_boxes(predictions)
 
     # Apply non-maxima suppression to suppress weak, overlapping bounding boxes
     indices = cv2.dnn.NMSBoxes(
-        boxes.tolist(), scores.tolist(), conf_threshold, iou_threshold)
+        boxes.tolist(), scores.tolist(), conf_threshold, iou_threshold
+    )
 
     if len(indices) > 0:
         indices = indices.flatten()
@@ -130,25 +137,40 @@ def process_output(output):
     return boxes[indices], scores[indices], class_ids[indices]
 
 
-if __name__ == "__main__":
-    # 1. Load image
-    print("Load image.jpg ...")
-    image = cv2.imread("./image.jpg")
-    img_height, img_width = image.shape[:2]  # [h,w,d]
+def main() -> None:
+    """main script"""
 
-    # 2. Prepare Image
-    print("prepare image...")
-    normalized_image = prepare_image(image)
+    # Initial args
+    model_path = "model/yolov7-tiny_480x640.onnx"
+    class_name_path = "model/class_names.txt"
+    image_folder = "images"
+    conf_threshold = 0.68
+    iou_threshold = 0.5
 
-    # 3. Forward Pass through Net
-    print("Pass image through net ...")
-    net_output = detect(normalized_image)
+    # Load the pretrained network ONNX file and the associated class names
+    net = cv2.dnn.readNet(model_path)
+    output_names = net.getUnconnectedOutLayersNames()
+    class_names = [x.strip() for x in open(class_name_path, "r").readlines()]
 
-    # 4. Process Net outputs
-    boxes, scores, class_ids = process_output(net_output)
+    # Get the expected image dimensions based on the model name
+    inpt_shape = tuple(int(x) for x in Path(model_path).stem.split("_")[-1].split("x"))
 
-    # 5. Draw Bounding boxes on images
-    output_img = draw_detections(image, boxes, scores, class_ids)
+    # Get colors to represent each class
+    colors = np.random.default_rng(3).uniform(0, 255, size=(len(class_names), 3))
+
+    # Get a list of images to run over
+    for img_path in tqdm(Path(image_folder).glob("*"), "Drawing boxes on images"):
+        image = cv2.imread(str(img_path))
+        normalized_image = prepare_image(image, inpt_shape)
+        output = forward_pass(normalized_image, net, output_names)
+        boxes, scores, class_ids = process_output(output, conf_threshold, iou_threshold)
+
+        # 5. Draw Bounding boxes on images
+        output_img = draw_detections(image, boxes, scores, class_ids)
 
     cv2.imwrite("./image_out.jpg", output_img)
     print("image_out.jpg written, exit")
+
+
+if __name__ == "__main__":
+    main()
