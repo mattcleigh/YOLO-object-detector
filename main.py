@@ -39,7 +39,7 @@ def forward_pass(
     """
     blob = cv2.dnn.blobFromImage(image, 1 / 255.0)
     network.setInput(blob)
-    return network.forward(output_names)[0]
+    return network.forward(output_names)[0][0]  # 1 for output type, 1 for batch dim
 
 
 def draw_boxes(
@@ -68,7 +68,7 @@ def draw_boxes(
             label,
             org=(x, y - 10),
             fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-            fontScale=np.round(np.sqrt(scale)),
+            fontScale=scale // 4,
             color=color,
             thickness=scale // 2,
         )
@@ -98,39 +98,49 @@ def process_output(
 ) -> tuple[np.ndarray]:
     """Process the output of the yolo model to get a collection of bounding boxes.
 
-    Full Yolo model output is typicaly:
-    - Grid X = Number of X grid cells (60)
-    - Grid Y = Number of Y grid cells (40)
-    - Num_Anchors = Number of anchor boxes per gird cell (7)
-    - 85 = Box features (x1, y1, width, height, prob_object, *prob_classes)
-    First 3 dimensions are often merged
+    Parameters
+    ----------
+    outputs : np.ndarray
+        Full YOLO model output of shape (60 x 40 x 7, 85).
+        (60 x 40 x 7) = GridX x GridY x Num_Anchors
+        85 = Box features (x_cent, y_cent, width, height, prob_object, *prob_classes)
+    size_ratio : np.ndarray
+        The ratio of the original image size to the model input size.
+    conf_threshold : float, optional
+        The threshold for filtering out low confidence predictions.
+        Default is 0.5.
+    iou_threshold : float, optional
+        The Intersection Over Union (IOU) threshold for non-maxima suppression.
+        Default is 0.5.
+
+    Returns
+    -------
+    tuple[np.ndarray]
+        The surviving boxes after non-maxima suppression, their scores, and class IDs.
     """
 
-    # Pop off the additional batch dimension
-    predictions = outputs[0]
-
     # Get the anchors the have a high confidence that they contain an object
-    obj_conf = predictions[:, 4]
+    obj_conf = outputs[:, 4]
     confidence_mask = obj_conf > conf_threshold
-    predictions = predictions[confidence_mask]
+    outputs = outputs[confidence_mask]
     obj_conf = obj_conf[confidence_mask]
 
     # Multiply class confidence with bounding box confidence
-    predictions[:, 5:] *= obj_conf[:, None]  # Is this necc?
+    outputs[:, 5:] *= obj_conf[:, None]  # Is this necc?
 
     # Get the maximum class score
-    max_scores = np.max(predictions[:, 5:], axis=-1)
+    max_scores = np.max(outputs[:, 5:], axis=-1)
 
     # Filter out boxes where the class is ambiguous (low max score)
     valid_mask = max_scores > conf_threshold
-    predictions = predictions[valid_mask]
+    outputs = outputs[valid_mask]
     max_scores = max_scores[valid_mask]
 
     # Get the class id corresponding to the max score
-    class_ids = np.argmax(predictions[:, 5:], axis=-1)
+    class_ids = np.argmax(outputs[:, 5:], axis=-1)
 
     # Get bounding boxes for each object
-    boxes = extract_boxes(predictions, size_ratio)
+    boxes = extract_boxes(outputs, size_ratio)
 
     # Apply non-maxima suppression to suppress weak, overlapping bounding boxes
     indices = cv2.dnn.NMSBoxes(boxes, max_scores, conf_threshold, iou_threshold)
