@@ -7,8 +7,8 @@ Using CV2 to:
 - Do a forward pass
 - Apply non-maxima suppression to the predictions
 
-<img src="image.jpg" width="512"/>
-<img src="image_out.jpg" width="512"/>
+<img src="images/dog.jpg" width="512"/>
+<img src="outputs/dog.jpg" width="512"/>
 
 
 ## Required Packages
