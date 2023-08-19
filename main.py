@@ -57,23 +57,20 @@ def draw_boxes(
         color = class_colors[class_id]
         label = f"{class_names[class_id]} {int(score * 100)}%"
 
-        # Draw rectangle onto the image
-        lw = int(0.005 * min(image.shape[:2]))
-        cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness=lw)
-        # cv2.getTextSize(
-        #     label,
-        #     cv2.FONT_HERSHEY_SIMPLEX,
-        #     lw//5,
-        #     lw//2
-        # )
+        # TODO Find a better way to perform the autoscaling
+        scale = int(0.005 * min(image.shape[:2]))
+
+        # Draw the rectangle and text onto the image
+        cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness=scale)
+        # cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, lw//5, lw//2)
         cv2.putText(
             image,
             label,
             org=(x, y - 10),
             fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-            fontScale=np.round(np.sqrt(lw)),
+            fontScale=np.round(np.sqrt(scale)),
             color=color,
-            thickness=lw // 2,
+            thickness=scale // 2,
         )
     return image
 
@@ -110,7 +107,7 @@ def process_output(
     """
 
     # Pop off the additional batch dimension
-    predictions = np.squeeze(outputs)
+    predictions = outputs[0]
 
     # Get the anchors the have a high confidence that they contain an object
     obj_conf = predictions[:, 4]
@@ -136,9 +133,7 @@ def process_output(
     boxes = extract_boxes(predictions, size_ratio)
 
     # Apply non-maxima suppression to suppress weak, overlapping bounding boxes
-    indices = cv2.dnn.NMSBoxes(
-        boxes.tolist(), max_scores.tolist(), conf_threshold, iou_threshold
-    )
+    indices = cv2.dnn.NMSBoxes(boxes, max_scores, conf_threshold, iou_threshold)
 
     # Return the surviving boxes, their scores and class ids
     return boxes[indices], max_scores[indices], class_ids[indices]
@@ -160,7 +155,8 @@ def main() -> None:
     output_names = net.getUnconnectedOutLayersNames()
 
     # Get the expected image dimensions based on the model name (width x height)
-    inpt_shape = tuple(int(x) for x in Path(model_path).stem.split("_")[-1].split("x"))
+    inpt_shape = Path(model_path).stem.split("_")[-1].split("x")
+    inpt_shape = [int(x) for x in inpt_shape]
     inpt_shape = inpt_shape[::-1]
 
     # Get names and colors to represent each class
